@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dokumentasi Magang - Landscape Fit</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css">
+    <style>
+        :root { --primary-color: #1e293b; --accent-color: #2563eb; --bg-gray: #f8fafc; }
+        body { font-family: 'Inter', system-ui, sans-serif; background-color: var(--bg-gray); color: #334155; }
+        .card { border: none; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
+        .nav-header { background: white; border-bottom: 1px solid #e2e8f0; }
+        #loadingOverlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(255,255,255,0.9); display: none;
+            justify-content: center; align-items: center; z-index: 9999; flex-direction: column;
+        }
+        .collage-preview-container {
+            width: 100%;
+            aspect-ratio: 16 / 9;
+            background: #f1f5f9;
+            border-radius: 8px;
+            overflow: hidden;
+            border: 2px dashed #cbd5e1;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        #finalCollageImg {
+            width: 100%; height: 100%; object-fit: contain; display: none;
+        }
+        .btn-primary { background-color: var(--accent-color); border: none; }
+        .table-img { width: 140px; aspect-ratio: 16/9; object-fit: contain; background: #eee; border-radius: 6px; }
+    </style>
+</head>
+<body>
+
+<div id="loadingOverlay">
+    <div class="spinner-border text-primary" role="status"></div>
+    <span class="mt-2 fw-bold" id="loadingText">Menyusun Dokumentasi...</span>
+</div>
+
+<header class="nav-header py-3 mb-4 shadow-sm">
+    <div class="container d-flex justify-content-between align-items-center">
+        <h4 class="mb-0 fw-bold text-dark"><i class="bi bi-camera-fill me-2 text-primary"></i>Dokumentasi <span class="text-primary">Magang</span></h4>
+        <button class="btn btn-sm btn-light border" onclick="location.reload()"><i class="bi bi-arrow-clockwise"></i> Reset</button>
+    </div>
+</header>
+
+<div class="container pb-5">
+    <div class="row">
+        <!-- Form Input -->
+        <div class="col-lg-5">
+            <div class="card p-4 mb-4">
+                <h5 class="fw-bold mb-4">Buat Dokumentasi</h5>
+                <form id="jurnalForm">
+                    <div class="row mb-4">
+                        <div class="col-6">
+                            <label class="form-label small fw-bold">Tanggal Kegiatan</label>
+                            <input type="date" id="tgl" class="form-control" required>
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label small fw-bold">Unggah Foto</label>
+                            <input type="file" id="fotoInput" class="form-control" accept="image/*" multiple onchange="handleFileSelection()">
+                        </div>
+                    </div>
+                    
+                    <div class="mb-4">
+                        <div class="d-flex justify-content-between align-items-end mb-2">
+                            <label class="form-label small fw-bold mb-0">Pratinjau Kolase (Landscape Fit)</label>
+                            <span id="fileInfo" class="badge bg-secondary" style="font-size: 0.65rem;"></span>
+                        </div>
+                        <div class="collage-preview-container" id="collageContainer">
+                            <canvas id="collageCanvas" style="display:none;"></canvas>
+                            <img id="finalCollageImg">
+                            <div id="placeholderText" class="text-center text-muted px-3">
+                                <i class="bi bi-images display-6 d-block mb-2"></i>
+                                <small>Pilih foto dokumentasi Anda</small>
+                            </div>
+                        </div>
+                        <small class="text-muted d-block mt-2" style="font-size: 0.7rem;">*Sistem otomatis melakukan zoom-out agar foto tidak terpotong.</small>
+                    </div>
+
+                    <button type="submit" id="btnSubmit" class="btn btn-primary w-100 py-2 fw-bold" disabled>
+                        <i class="bi bi-download me-2"></i>Simpan ke Galeri
+                    </button>
+                </form>
+            </div>
+        </div>
+
+        <!-- Tabel Riwayat (Sesi Ini) -->
+        <div class="col-lg-7">
+            <div class="card p-4">
+                <h5 class="fw-bold mb-4">Riwayat Unduhan Sesi Ini</h5>
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Tanggal</th>
+                                <th>Pratinjau</th>
+                                <th>Aksi</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tableBody"></tbody>
+                    </table>
+                </div>
+                <div id="emptyState" class="text-center py-5">
+                    <i class="bi bi-folder2-open text-muted display-4"></i>
+                    <p class="text-muted mt-2">Belum ada file yang diunduh.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+<script>
+    let sessionHistory = [];
+    let finalBase64 = "";
+
+    function startLoading(msg) { 
+        document.getElementById('loadingText').innerText = msg;
+        document.getElementById('loadingOverlay').style.display = 'flex'; 
+    }
+    function endLoading() { document.getElementById('loadingOverlay').style.display = 'none'; }
+
+    // Set default date to today
+    document.getElementById('tgl').valueAsDate = new Date();
+
+    async function handleFileSelection() {
+        const input = document.getElementById('fotoInput');
+        if (input.files.length === 0) return;
+
+        startLoading("Mengolah Foto Dokumentasi...");
+        
+        const files = Array.from(input.files);
+        const images = await Promise.all(files.map(file => {
+            return new Promise(resolve => {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    const img = new Image();
+                    img.onload = () => resolve(img);
+                    img.src = e.target.result;
+                };
+                reader.readAsDataURL(file);
+            });
+        }));
+
+        generateFitCollage(images);
+    }
+
+    function generateFitCollage(images) {
+        const canvas = document.getElementById('collageCanvas');
+        const ctx = canvas.getContext('2d');
+        
+        const width = 1920; 
+        const height = 1080;
+        canvas.width = width;
+        canvas.height = height;
+
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(0, 0, width, height);
+
+        const count = images.length;
+        let cols = Math.ceil(Math.sqrt(count));
+        let rows = Math.ceil(count / cols);
+
+        const cellWidth = width / cols;
+        const cellHeight = height / rows;
+        const padding = 25; 
+
+        images.forEach((img, i) => {
+            const col = i % cols;
+            const row = Math.floor(i / cols);
+            const dx = col * cellWidth + padding;
+            const dy = row * cellHeight + padding;
+            const dw = cellWidth - (padding * 2);
+            const dh = cellHeight - (padding * 2);
+
+            const imgRatio = img.width / img.height;
+            const cellRatio = dw / dh;
+            
+            let targetWidth, targetHeight;
+            
+            if (imgRatio > cellRatio) {
+                targetWidth = dw;
+                targetHeight = dw / imgRatio;
+            } else {
+                targetHeight = dh;
+                targetWidth = dh * imgRatio;
+            }
+
+            const offsetX = dx + (dw - targetWidth) / 2;
+            const offsetY = dy + (dh - targetHeight) / 2;
+
+            ctx.drawImage(img, offsetX, offsetY, targetWidth, targetHeight);
+        });
+
+        const tglText = document.getElementById('tgl').value || "";
+        ctx.fillStyle = "rgba(0,0,0,0.65)";
+        ctx.fillRect(0, height - 70, width, 70);
+        ctx.fillStyle = "white";
+        ctx.font = "bold 28px Inter, Arial";
+        ctx.textAlign = "center";
+        ctx.fillText("DOKUMENTASI MAGANG | " + tglText, width / 2, height - 25);
+
+        finalBase64 = canvas.toDataURL("image/jpeg", 0.9);
+        
+        const imgEl = document.getElementById('finalCollageImg');
+        imgEl.src = finalBase64;
+        imgEl.style.display = 'block';
+        document.getElementById('placeholderText').style.display = 'none';
+        document.getElementById('btnSubmit').disabled = false;
+        
+        const sizeKB = (finalBase64.length * 0.75 / 1024).toFixed(0);
+        document.getElementById('fileInfo').innerText = `${sizeKB} KB | 16:9 Fit`;
+        endLoading();
+    }
+
+    document.getElementById('jurnalForm').onsubmit = function(e) {
+        e.preventDefault();
+        
+        const tglValue = document.getElementById('tgl').value;
+        const fileName = `DOKUMENTASI_${tglValue}_${Date.now()}.jpg`;
+
+        // Proses Download Langsung
+        const link = document.createElement('a');
+        link.href = finalBase64;
+        link.download = fileName;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+
+        // Tambah ke riwayat lokal
+        sessionHistory.push({
+            id: Date.now(),
+            tgl: tglValue,
+            imgUrl: finalBase64
+        });
+
+        renderUI();
+        
+        Swal.fire({
+            title: "Berhasil Diunduh!",
+            text: "Gambar telah disimpan ke perangkat Anda.",
+            icon: "success",
+            timer: 2000,
+            showConfirmButton: false
+        });
+
+        // Reset Form
+        document.getElementById('fotoInput').value = "";
+        document.getElementById('finalCollageImg').style.display = 'none';
+        document.getElementById('placeholderText').style.display = 'block';
+        document.getElementById('btnSubmit').disabled = true;
+        document.getElementById('fileInfo').innerText = "";
+    }
+
+    function renderUI() {
+        const tbody = document.getElementById('tableBody');
+        const emptyState = document.getElementById('emptyState');
+        tbody.innerHTML = '';
+        
+        if (sessionHistory.length === 0) {
+            emptyState.classList.remove('d-none');
+            return;
+        }
+
+        emptyState.classList.add('d-none');
+        [...sessionHistory].reverse().forEach(item => {
+            tbody.innerHTML += `
+                <tr>
+                    <td><span class="badge bg-dark">${item.tgl}</span></td>
+                    <td>
+                        <img src="${item.imgUrl}" class="table-img border">
+                    </td>
+                    <td>
+                        <button class="btn btn-sm btn-primary" onclick="downloadAgain('${item.id}')">
+                            <i class="bi bi-download"></i>
+                        </button>
+                    </td>
+                </tr>
+            `;
+        });
+    }
+
+    function downloadAgain(id) {
+        const item = sessionHistory.find(x => x.id == id);
+        if (item) {
+            const link = document.createElement('a');
+            link.href = item.imgUrl;
+            link.download = `RE_DOWNLOAD_${item.tgl}.jpg`;
+            link.click();
+        }
+    }
+</script>
+</body>
+</html>
